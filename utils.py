@@ -41,8 +41,13 @@ def convert_instruction_data(data_file, save_file):
             f.write('\n')
 
 
+def read_api(filename):
+    with open(filename, 'r') as file:
+        first_line = file.readline().strip()
+    return first_line
+
 openai.api_base = "https://api.chatanywhere.com.cn/v1"
-openai.api_key = "sk-zqpGdsIt7RhWBqQCLeoYIG9PcSH3S5Ns45uldFvqooNJHapn"
+openai.api_key = read_api('gpt_tokens.txt')
 
 def ask_gpt(messages, model='gpt-4', n=1, temperature=1, max_retry=10):
     # Note: you need to be using OpenAI Python v0.27.0 for the code below to work

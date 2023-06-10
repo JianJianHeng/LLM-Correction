@@ -274,7 +274,7 @@ if __name__ == '__main__':
     parser = ArgumentParser()
 
     parser.add_argument("--load_model", default="", type=str)  # full path, with .pth
-    parser.add_argument("--start_id", default=102, type=int)  # wandb project name. if "" then don't use wandb
+    parser.add_argument("--start_id", default=566, type=int)  # wandb project name. if "" then don't use wandb
     parser.add_argument("--vote_num", default=6, type=int)
     parser.add_argument("--mode", default="NLG", type=str)
     parser.add_argument("--lang", default="chinese", type=str)
