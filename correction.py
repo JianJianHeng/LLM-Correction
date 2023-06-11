@@ -203,7 +203,11 @@ class Correction(object):
                 except IndexError:
                     sen_list_copy.append(content)  # 如果索引超出范围，则添加到列表末尾
 
-            return ''.join(sen_list_copy)
+            return_str = ''.join(sen_list_copy)
+            if len(return_str) == 0:
+                return_str = ''.join(sen_list)
+
+            return return_str
         
 
     def ask_advises(self, input_str, output_str):
@@ -273,8 +277,12 @@ class Correction(object):
         gpt_vote_result = []
 
         for v in vote_list:
-            sim = v['Whether highly similar'].lower()
-            a = v['Which better'].lower()
+            try:
+                sim = v['Whether highly similar'].lower()
+                a = v['Which better'].lower()
+            except Exception as e:
+                print('Warn: Error format.')
+                continue
 
             if rand_num == 0:
                 e_result = 'last'
