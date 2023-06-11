@@ -12,12 +12,12 @@ from argparse import ArgumentParser
 
 
 class Correction(object):
-    def __init__(self, input_file, output_file, task_prompt, args):
-        self.input_file = input_file
-        self.output_file = output_file
-        self.task_prompt = task_prompt
+    def __init__(self, args):
+        self.input_file = args.input_file
+        self.output_file = args.output_file
+        if args.mode == 'NLG':
+            self.task_prompt = prompt.instruct_task_prompt
         self.args = args
-
         self.input_data = self.read_input_file()
 
     def read_input_file(self):
@@ -68,12 +68,13 @@ class Correction(object):
         
         for ad in advises:
             for op in ad:
-                operation = op['Operation']
                 try:
+                    operation = op['Operation']
                     sen_id = int(op['Sentence id'])
+                    content = op['Content']
                 except Exception as e:
+                    print('Warn: not found key.\n %s' % e)
                     continue
-                content = op['Content']
 
                 # avoid repeat
                 if operation in ['Add', 'Modify'] and (content in output_str or content in sen_list):
@@ -131,7 +132,7 @@ class Correction(object):
                     {"role": "user", "content": complete_prompt}
                 ]
 
-        llm_results = utils.ask_gpt(messages = complete_messages, model = args.model_name, n = 1)
+        llm_results = utils.ask_gpt(messages = complete_messages, model = args.model_name, n = 1, temperature = self.args.temperature)
         modification_list = json.loads(llm_results['choices'][0]['message']['content'])
 
         return modification_list
@@ -187,7 +188,8 @@ class Correction(object):
                 try:
                     del sen_list_copy[sen_id]  # 删除特定索引处的元素
                 except IndexError:
-                    del sen_list_copy[-1]  # 如果索引超出范围，则删除最后一个元素
+                    if len(sen_list_copy) > 0:
+                        del sen_list_copy[-1]  # 如果索引超出范围，则删除最后一个元素
 
             for a_op in add_list:
                 sen_id = int(a_op['Sentence id']) - 1
@@ -198,16 +200,12 @@ class Correction(object):
                     sen_list_copy.append(content)  # 如果索引超出范围，则添加到列表末尾
 
             return ''.join(sen_list_copy)
-            
-    
-    def correct(self, sentence):
-        input_str = sentence['input']
-        output_str, sen_list = self.get_sentence_id(sentence['output'])
+        
 
-        print('Instruction: %s' % input_str)
-        print('Output: %s' % output_str)
-        print()
-
+    def ask_advises(self, input_str, output_str):
+        """
+        ask GPT for advises
+        """
         input_prompt = prompt.correct_system_prompt.substitute(
             task=self.task_prompt,
             input=input_str,
@@ -216,7 +214,7 @@ class Correction(object):
                     {"role": "user", "content": input_prompt},
                 ]
         
-        llm_results = utils.ask_gpt(messages = input_messages, model = args.model_name, n = self.args.vote_num)
+        llm_results = utils.ask_gpt(messages = input_messages, model = args.model_name, n = self.args.vote_num, temperature = self.args.temperature)
  
         advises = [] 
         for response in llm_results['choices']:
@@ -226,6 +224,23 @@ class Correction(object):
                 advises.append(ad)
             except Exception as e:
                 print("Convert Error")
+                print(result)
+        
+        return advises
+
+
+    def vote_correct(self, sentence):
+        """
+        Correction with majority vote
+        """
+        input_str = sentence['input']
+        output_str, sen_list = self.get_sentence_id(sentence['output'])
+
+        print('Instruction: %s' % input_str)
+        print('Output: %s' % output_str)
+        print()
+
+        advises = self.ask_advises(input_str, output_str)
         
         first_corrected_text = ''
         if len(advises) != 0:
@@ -243,6 +258,155 @@ class Correction(object):
         if args.save_first and first_corrected_text == '':
             first_corrected_text = corrected_text
         return corrected_text, first_corrected_text, advises
+    
+
+    def get_sim_better(self, vote_list):
+        """
+        get similarity and better result by vote
+        """
+        sim_score = 0
+        A_score = 0
+
+        for v in vote_list:
+            sim = v['Whether highly similar'].lower()
+            a = v['Which better'].lower()
+
+            if sim == 'yes':
+                sim_score += 1
+            elif sim == 'no':
+                sim_score -= 1
+            
+            if a == 'enthusiasm':
+                A_score += 1
+            elif a == 'Ambition':
+                A_score -= 1
+        
+        return sim_score, A_score
+
+
+    def cycle_correct(self, sentence, max_try = 10, same_cut = 3):
+        """
+        Correction using a loop frame
+        """
+        input_str = sentence['input']
+        _, sen_list = self.get_sentence_id(sentence['output'])
+        last_output = ''.join(sen_list)
+        compare_history = []        # record compare history
+
+        better_answer = last_output
+        first_corrected_text = last_output
+
+        print('Instruction: %s' % input_str)
+        print('Origin Output: %s' % last_output)
+        print()
+
+        # cycle
+        try_num = 1
+        same_time = 0
+        while try_num < max_try:
+            # get correted output
+            _, sen_list = self.get_sentence_id(last_output)
+            advises = self.ask_advises(input_str, last_output)
+
+            if len(advises) != 0:
+                operation_list = self.majority_vote(last_output, sen_list, advises)
+                new_output = self.modify(input_str, last_output, sen_list, operation_list)
+                first_corrected_text = new_output
+            else:
+                new_output = ''.join(sen_list)
+                first_corrected_text = new_output
+
+            print('New Output: %s' % new_output)
+            print()
+
+            if new_output == last_output:       # cycle terminal
+                compare_history.append({'last': last_output, 'new': new_output, 'similar': 'same', 'better': 'same'})
+                break
+
+            compare = {'last': last_output, 'new': new_output}
+            rand_num = random.choice([1, 0])
+
+            if rand_num == 0:
+                output_1 = last_output
+                output_2 = new_output
+            else:
+                output_1 = new_output
+                output_2 = last_output
+            
+            input_prompt = prompt.compare_prompt.substitute(task=self.task_prompt, input=input_str, output_1=output_1, output_2=output_2)
+            input_messages =[
+                    {"role": "user", "content": input_prompt},
+                ]
+
+            llm_results = utils.ask_gpt(messages = input_messages, model = args.model_name, n = self.args.vote_num, temperature = self.args.temperature)
+ 
+            vote_list = [] 
+            for response in llm_results['choices']:
+                result = response['message']['content']
+                try:
+                    ad = json.loads(result)
+                    vote_list.append(ad)
+                except Exception as e:
+                    print("Convert Error")
+
+            sim_score, a_score = self.get_sim_better(vote_list)
+            
+            better_answer = ''
+            terminal_flag = False
+            if a_score > 0:
+                if rand_num == 0:
+                    better_answer = last_output
+                    compare['better'] = 'last'
+                else:
+                    better_answer = new_output
+                    compare['better'] = 'new'
+            elif a_score < 0:
+                if rand_num == 0:
+                    better_answer = new_output
+                    compare['better'] = 'new'
+                else:
+                    better_answer = last_output
+                    compare['better'] = 'last'
+            else:
+                better_answer = last_output
+                compare['better'] = 'same'
+
+
+            if sim_score >= 0:          
+                compare['sim'] = 'yes'
+                terminal_flag = True
+            else:
+                compare['sim'] = 'no'             
+
+            compare_history.append(compare)
+
+            print('Cycle %d' % try_num)
+            print('Sim: %s' % compare['sim'])
+            print('Better: %s' % compare['better'])
+            print('Better Output: %s' % better_answer)
+            print()
+            
+            
+            # continue cycle
+            if compare['better'] == 'last':
+                same_time += 1
+            else:
+                same_time = 0
+            if same_time >= same_cut:
+                terminal_flag = True 
+
+            if terminal_flag:       # cycle terminal
+                break
+            
+            last_output = better_answer
+            try_num += 1
+
+        if try_num >= max_try:
+            compare_history.append('Reach Max Retry...')
+
+
+        return better_answer, first_corrected_text, compare_history
+
 
     def run(self):
         start_id = self.args.start_id
@@ -255,8 +419,14 @@ class Correction(object):
             print(index)
             print()
 
-            corrected_text, first_corrected_text, advises  = self.correct(data)
-            save_dict = {'id': index, 'input': data['input'], 'origin_output': data['output'], 'corrected_output': corrected_text, 'gpt_advises': advises}
+            if self.args.strategy == 'circle':
+                corrected_text, first_corrected_text, compare_history  = self.cycle_correct(data)
+                save_dict = {'id': index, 'input': data['input'], 'origin_output': data['output'], 'corrected_output': corrected_text, 'compare_history': compare_history}
+            elif self.args.strategy == 'vote':
+                corrected_text, first_corrected_text, advises  = self.vote_correct(data)
+                save_dict = {'id': index, 'input': data['input'], 'origin_output': data['output'], 'corrected_output': corrected_text, 'gpt_advises': advises}
+            else:
+                raise("Unknown strategy %s" % self.args.strategy)
 
             if args.save_first:
                 save_dict['first_corrected_output'] = first_corrected_text
@@ -269,25 +439,25 @@ class Correction(object):
 
 
 
-
 if __name__ == '__main__':
     parser = ArgumentParser()
 
-    parser.add_argument("--load_model", default="", type=str)  # full path, with .pth
-    parser.add_argument("--start_id", default=566, type=int)  # wandb project name. if "" then don't use wandb
-    parser.add_argument("--vote_num", default=6, type=int)
-    parser.add_argument("--mode", default="NLG", type=str)
-    parser.add_argument("--lang", default="chinese", type=str)
-    parser.add_argument("--save_first", default=True, type=bool)
-    parser.add_argument("--model_name", default='gpt-4', type=str)
-    parser.add_argument("--use_api_ensemble", default=False, type=bool)
+    parser.add_argument("--input_file", default="/Users/jjh/Desktop/git_projects/GPT-Correction/data/luotuo_labeled_data.json", type=str)
+    parser.add_argument("--output_file", default="/Users/jjh/Desktop/git_projects/GPT-Correction/data/luotuo_corrected_chatgpt_circle.json", type=str) 
+    parser.add_argument("--start_id", default=8, type=int)                # skip instances
+    parser.add_argument("--vote_num", default=6, type=int)                  # how many GPT votes
+    parser.add_argument("--mode", default="NLG", type=str)                  # can choose NLG or NLU
+    parser.add_argument("--lang", default="chinese", type=str)              # can choose chinese or english
+    parser.add_argument("--save_first", default=True, type=bool)            # save first GPT correction result
+    parser.add_argument("--model_name", default='gpt-4', type=str)     
+    parser.add_argument("--temperature", default=1, type=float)      
+    parser.add_argument("--use_api_ensemble", default=False, type=bool)     # use GPT api to ensemble vote result
+    parser.add_argument("--strategy", default='circle', type=str)           # circle, vote
     args = parser.parse_args()
 
     print(args)
 
-    instruction_file = "/Users/jjh/Desktop/git_projects/GPT-Correction/data/luotuo_labeled_data.json"
-    save_file = "/Users/jjh/Desktop/git_projects/GPT-Correction/data/luotuo_corrected_gpt4.json"
 
-    correction = Correction(instruction_file, save_file, prompt.instruct_task_prompt, args)
+    correction = Correction(args)
 
     correction.run()

@@ -56,7 +56,7 @@ Please evaluate whether the above annotation result meets the requirements of th
 2) Delete: You believe that the annotated answer contains redundant content, and you think this content should be deleted. Please specify the number of the sentence you want to delete.
 3) Modify: You believe that the annotated answer has errors, or you think this answer can be further modified. Please specify the number of the sentence you want to modify, and provide the modified sentence content.
 
-Please provide your revision suggestions according to the following json format.
+Please provide your revision suggestions according to the following json format:
 '''
 [
     {
@@ -79,6 +79,8 @@ Next, we will provide you with a detailed description of the annotation task, th
 Note that the "Content" in the operation sequence we provide is a list. You can select one from the list or combine all the answers to provide the one you consider most ideal. The "Content" in your returned result must be a string.
 Please complete the modification operations in the order specified and according to the mentioned output format.
 
+Please provide your modify result based on the following results:
+
 
 Annotation Task:
 $task
@@ -96,11 +98,41 @@ Please provide the review results in JSON format:
 """)
 
 
+# Compare Prompt
+compare_prompt = Template("""You are a professional NLP annotation reviewer, and your task is to compare the similarity between two annotation results of the same annotated content based on the requirements of the annotation task. You are required to select the better and more suitable result for the annotation task from the two annotations.
+
+Audit Task
+1) Similarity Audit: You need to assess whether two annotation results are highly similar. If the content of the two answers is very similar, with almost identical word order and the same semantics, it is considered highly similar. Please note that semantics is the most crucial factor for this criterion. Even if the syntax of an answer is identical, if the meaning conveyed is completely opposite or different, it should be considered dissimilar for this task.
+2) Annotation Result Selection: You need to choose the better one among the two annotation results. Your selection should strictly meet the requirements of the annotation task.Please note that we use the words "Enthusiasm" and "Ambition" as labels for two different annotation results. When choosing the preferred annotation result, please use these two words as markers for the return response.
+
+Please provide your revision suggestions according to the following json format:
+{
+    "Reason": "<provide reason>",                   # Provide the reason for this audit
+    "Whether highly similar": "<yes/no>",           # Please evaluate whether the two annotated results are highly similar in terms of form, structure, grammar, and semantics. Please select "no" if there is semantic opposition or difference. Your answer should be limited to "yes" or "no."
+    "Which better": "<Enthusiasm/Ambition/Same>"    # Please select the result that you believe is better and more suitable for the annotation task. Your choice must be one of the following: Enthusiasm, Ambition, or Same. Please note that "Same" indicates that you consider the two results to be equally good.
+}
+
+Annotation Task:
+$task
+
+Input:
+$input
+
+Enthusiasm:
+$output_1
+
+Ambition:
+$output_2
+
+Please provide the audit results in JSON format:
+""")
+
+
+
 # NLG task
 instruct_task_prompt = """According to the requirements of the input instruction, respond with content that satisfies reliability, consistency, and common sense, and try to meet the requirements given by the instruction.
 After ensuring that there are no obvious errors or omissions and that the instructions' requirements are not being deviated from, if you feel that the answer can be improved, you can use the Modify operation to make modifications to the sentence you wish to modify.
 Please be more daring in improving outputs to make them even better.
 """
-
 
 
