@@ -64,7 +64,8 @@ class Correction(object):
         operation_list = []
         sen_modified_dict = {}
 
-        threshlod = int(len(advises) / 2)
+        pass_threshold = int(len(advises) * self.args.pass_threshold)
+        op_threshold = int(len(advises) * self.args.op_threshold)
         
         for ad in advises:
             for op in ad:
@@ -92,13 +93,16 @@ class Correction(object):
                 # operation_list.append({'Operation': op['Operation'], 'Sentence id': op['Sentence id'], 'Content': [op['Content']]})
 
         # if Pass reach threshold
-        if -1 in sen_modified_dict and 'Pass' in sen_modified_dict[-1] and  sen_modified_dict[-1]['Pass']['num'] >= threshlod:
+        if -1 in sen_modified_dict and 'Pass' in sen_modified_dict[-1] and  sen_modified_dict[-1]['Pass']['num'] >= pass_threshold:
             operation_list.append({'Operation': 'Pass', 'Sentence id': -1, 'Content': ['None']})
             return operation_list
         
 
         for sen_id, op_dict in sen_modified_dict.items():
             # only allow one operation in one sentence id
+            if sen_id == -1:
+                continue
+            
             max_num = 0
             max_op = ''
             contents = ''
@@ -109,7 +113,7 @@ class Correction(object):
                     max_op = op
                     contents = op_content['Content']
             
-            if max_num >= threshlod:
+            if max_num >= op_threshold:
                 operation_list.append({'Operation': max_op, 'Sentence id': sen_id, 'Content': contents})
         return operation_list
     
@@ -155,7 +159,7 @@ class Correction(object):
             if len(operation_list) == 1 and operation_list[0]['Operation'].lower() == 'pass':
                 return ''.join(sen_list)
             
-            if args.use_api_ensemble:
+            if self.args.use_api_ensemble:
                 operation_list = self.complete_operation(input_str, output_str, operation_list)
             else:
                 operation_list = self.random_choice(operation_list)
@@ -260,28 +264,47 @@ class Correction(object):
         return corrected_text, first_corrected_text, advises
     
 
-    def get_sim_better(self, vote_list):
+    def get_sim_better(self, vote_list, rand_num):
         """
         get similarity and better result by vote
         """
         sim_score = 0
         A_score = 0
+        gpt_vote_result = []
 
         for v in vote_list:
             sim = v['Whether highly similar'].lower()
             a = v['Which better'].lower()
 
+            if rand_num == 0:
+                e_result = 'last'
+                a_reslut = 'new'
+            else:
+                e_result = 'new'
+                a_reslut = 'last'
+
+            vote = {}
+
             if sim == 'yes':
                 sim_score += 1
+                vote['sim'] = 'yes'
             elif sim == 'no':
                 sim_score -= 1
+                vote['sim'] = 'no'
             
             if a == 'enthusiasm':
                 A_score += 1
+                vote['better'] = e_result
             elif a == 'Ambition':
                 A_score -= 1
+                vote['better'] = a_reslut
+            else:
+                vote['better'] = 'same'
+            
+            gpt_vote_result.append(vote)
+            
         
-        return sim_score, A_score
+        return sim_score, A_score, gpt_vote_result
 
 
     def cycle_correct(self, sentence, max_try = 10, same_cut = 3):
@@ -292,6 +315,7 @@ class Correction(object):
         _, sen_list = self.get_sentence_id(sentence['output'])
         last_output = ''.join(sen_list)
         compare_history = []        # record compare history
+        gpt_vote_history = []
 
         better_answer = last_output
         first_corrected_text = last_output
@@ -320,7 +344,7 @@ class Correction(object):
             print()
 
             if new_output == last_output:       # cycle terminal
-                compare_history.append({'last': last_output, 'new': new_output, 'similar': 'same', 'better': 'same'})
+                compare_history.append({'last': last_output, 'new': new_output, 'sim': 'same', 'better': 'same'})
                 break
 
             compare = {'last': last_output, 'new': new_output}
@@ -349,7 +373,7 @@ class Correction(object):
                 except Exception as e:
                     print("Convert Error")
 
-            sim_score, a_score = self.get_sim_better(vote_list)
+            sim_score, a_score, gpt_vote_result = self.get_sim_better(vote_list, rand_num)
             
             better_answer = ''
             terminal_flag = False
@@ -379,6 +403,7 @@ class Correction(object):
                 compare['sim'] = 'no'             
 
             compare_history.append(compare)
+            gpt_vote_history.append({'last': last_output, 'new': new_output, 'vote_list':gpt_vote_result})
 
             print('Cycle %d' % try_num)
             print('Sim: %s' % compare['sim'])
@@ -405,7 +430,7 @@ class Correction(object):
             compare_history.append('Reach Max Retry...')
 
 
-        return better_answer, first_corrected_text, compare_history
+        return better_answer, first_corrected_text, compare_history, gpt_vote_history
 
 
     def run(self):
@@ -420,8 +445,8 @@ class Correction(object):
             print()
 
             if self.args.strategy == 'circle':
-                corrected_text, first_corrected_text, compare_history  = self.cycle_correct(data)
-                save_dict = {'id': index, 'input': data['input'], 'origin_output': data['output'], 'corrected_output': corrected_text, 'compare_history': compare_history}
+                corrected_text, first_corrected_text, compare_history, gpt_vote_history = self.cycle_correct(data)
+                save_dict = {'id': index, 'input': data['input'], 'origin_output': data['output'], 'corrected_output': corrected_text, 'compare_history': compare_history, 'gpt_vote_history': gpt_vote_history}
             elif self.args.strategy == 'vote':
                 corrected_text, first_corrected_text, advises  = self.vote_correct(data)
                 save_dict = {'id': index, 'input': data['input'], 'origin_output': data['output'], 'corrected_output': corrected_text, 'gpt_advises': advises}
@@ -445,19 +470,26 @@ if __name__ == '__main__':
     parser.add_argument("--input_file", default="/Users/jjh/Desktop/git_projects/GPT-Correction/data/luotuo_labeled_data.json", type=str)
     parser.add_argument("--output_file", default="/Users/jjh/Desktop/git_projects/GPT-Correction/data/luotuo_corrected_chatgpt_circle.json", type=str) 
     parser.add_argument("--start_id", default=8, type=int)                # skip instances
-    parser.add_argument("--vote_num", default=6, type=int)                  # how many GPT votes
+    parser.add_argument("--vote_num", default=10, type=int)                  # how many GPT votes
     parser.add_argument("--mode", default="NLG", type=str)                  # can choose NLG or NLU
     parser.add_argument("--lang", default="chinese", type=str)              # can choose chinese or english
-    parser.add_argument("--save_first", default=True, type=bool)            # save first GPT correction result
-    parser.add_argument("--model_name", default='gpt-4', type=str)     
-    parser.add_argument("--temperature", default=1, type=float)      
-    parser.add_argument("--use_api_ensemble", default=False, type=bool)     # use GPT api to ensemble vote result
-    parser.add_argument("--strategy", default='circle', type=str)           # circle, vote
+    parser.add_argument("--save_first", default=True, action='store_true')            # save first GPT correction result
+         
+    parser.add_argument("--use_api_ensemble", default=False, action='store_true')     # use GPT api to ensemble vote result
+    parser.add_argument("--strategy", default='ciycle', type=str)           # circle, vote
+    parser.add_argument("--pass_threshold", default=0.8, type=float)
+    parser.add_argument("--op_threshold", default=0.2, type=float)
+
+    parser.add_argument("--model_name", default='gpt-3.5-turbo', type=str)     
+    parser.add_argument("--temperature", default=1, type=float) 
+    parser.add_argument("--api_key", default='', type=str)
     args = parser.parse_args()
 
     print(args)
 
+    if len(args.api_key) != 0:
+        utils.set_api_key(args.api_key)
+
 
     correction = Correction(args)
-
     correction.run()

@@ -132,7 +132,6 @@ Please provide the audit results in JSON format:
 # NLG task
 instruct_task_prompt = """According to the requirements of the input instruction, respond with content that satisfies reliability, consistency, and common sense, and try to meet the requirements given by the instruction.
 After ensuring that there are no obvious errors or omissions and that the instructions' requirements are not being deviated from, if you feel that the answer can be improved, you can use the Modify operation to make modifications to the sentence you wish to modify.
-Please be more daring in improving outputs to make them even better.
-"""
+Please be more daring in improving outputs to make them even better."""
 
 

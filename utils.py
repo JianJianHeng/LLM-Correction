@@ -49,6 +49,9 @@ def read_api(filename):
 openai.api_base = "https://api.chatanywhere.com.cn/v1"
 openai.api_key = read_api('gpt_tokens.txt')
 
+def set_api_key(api_key):
+    openai.api_key = api_key
+
 def ask_gpt(messages, model='gpt-3.5-turbo', n=1, temperature=1, max_retry=10):
     # Note: you need to be using OpenAI Python v0.27.0 for the code below to work
     success = False
