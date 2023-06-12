@@ -273,8 +273,7 @@ class Correction(object):
         get similarity and better result by vote
         """
         sim_score = 0
-        A_score = 0
-        B_score = 0
+        score = 0
         same_score = 0
         better_score = 0
         gpt_vote_result = []
@@ -304,23 +303,26 @@ class Correction(object):
                 vote['sim'] = 'no'
             
             if a == 'enthusiasm':
-                A_score += 1
+                score += 1
                 vote['better'] = e_result
             elif a == 'Ambition':
-                B_score += 1
+                score -= 1
                 vote['better'] = a_reslut
             else:
                 vote['better'] = 'same'
                 same_score += 1
             
             gpt_vote_result.append(vote)
-        
-        if A_score >= B_score and A_score >= same_score:
-            better_score = 1
-        if B_score >= A_score and B_score >= same_score:
-            better_score = -1
-        if same_score >= A_score and same_score >= B_score:
+
+        if same_score >= int(len(vote_list) * 0.66):
             better_score = 0
+        else:
+            if score > 0:
+                better_score = 1
+            elif score < 0:
+                better_score = -1
+            else:
+                better_score = 0
         
         return sim_score, better_score, gpt_vote_result
 

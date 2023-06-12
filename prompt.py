@@ -164,5 +164,5 @@ $input
 Output:
 $output
 
-Please provide your review results in the format mentioned above:
+Please provide your review results in the json format mentioned above:
 """)
