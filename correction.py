@@ -402,6 +402,7 @@ class Correction(object):
             else:
                 better_answer = last_output
                 compare['better'] = 'same'
+                terminal_flag = True
 
 
             if sim_score >= 0:          
