@@ -16,7 +16,7 @@ class Correction(object):
         self.input_file = args.input_file
         self.output_file = args.output_file
         if args.mode == 'NLG':
-            self.task_prompt = prompt.instruct_task_prompt
+            self.task_prompt = prompt.instruct_task_prompt_chinese
         self.args = args
         self.input_data = self.read_input_file()
 
@@ -210,11 +210,11 @@ class Correction(object):
             return return_str
         
 
-    def ask_advises(self, input_str, output_str):
+    def ask_advises(self, input_str, output_str, prompt_template = prompt.correct_system_prompt):
         """
         ask GPT for advises
         """
-        input_prompt = prompt.correct_system_prompt.substitute(
+        input_prompt = prompt_template.substitute(
             task=self.task_prompt,
             input=input_str,
             output=output_str)
@@ -274,6 +274,9 @@ class Correction(object):
         """
         sim_score = 0
         A_score = 0
+        B_score = 0
+        same_score = 0
+        better_score = 0
         gpt_vote_result = []
 
         for v in vote_list:
@@ -304,15 +307,22 @@ class Correction(object):
                 A_score += 1
                 vote['better'] = e_result
             elif a == 'Ambition':
-                A_score -= 1
+                B_score += 1
                 vote['better'] = a_reslut
             else:
                 vote['better'] = 'same'
+                same_score += 1
             
             gpt_vote_result.append(vote)
-            
         
-        return sim_score, A_score, gpt_vote_result
+        if A_score >= B_score and A_score >= same_score:
+            better_score = 1
+        if B_score >= A_score and B_score >= same_score:
+            better_score = -1
+        if same_score >= A_score and same_score >= B_score:
+            better_score = 0
+        
+        return sim_score, better_score, gpt_vote_result
 
 
     def cycle_correct(self, sentence, max_try = 10, same_cut = 3):
@@ -440,6 +450,180 @@ class Correction(object):
 
 
         return better_answer, first_corrected_text, compare_history, gpt_vote_history
+    
+
+    def modify_pass_vote(self, output_str, advises, pass_threshold=0.5):
+        threshold = int(pass_threshold * len(advises))
+        pass_num = 0
+        modify_values = []
+        first_corrected_text = output_str
+
+        for i, ad in enumerate(advises):
+            try:
+                act = ad['act'].lower()
+                value = ad['value']
+            except Exception as e:
+                continue
+
+            if act == 'pass':
+                pass_num += 1
+            elif act == 'modify':
+                modify_values.append(value)
+                if i == 0:
+                    first_corrected_text = value
+
+        if pass_num >= threshold:
+            return first_corrected_text, output_str
+        else:
+            return first_corrected_text, random.choice(modify_values)
+                
+
+
+    def ReAct_correct(self, sentence):
+        input_str = sentence['input']
+        output_str = sentence['output']
+
+        print('Instruction: %s' % input_str)
+        print('Output: %s' % output_str)
+        print()
+
+        advises = self.ask_advises(input_str, output_str, prompt_template=prompt.Rethinking_prompt)
+
+        first_corrected_text = output_str
+        if len(advises) != 0:
+            first_corrected_text, corrected_text = self.modify_pass_vote(output_str, advises)
+        else:
+            corrected_text = output_str
+
+        print('Correct: %s' % corrected_text)
+        
+        return corrected_text, first_corrected_text, advises
+
+
+
+    def ReAct_cycle_correct(self, sentence, max_try = 5, same_cut = 3):
+        """
+        Correction using a loop frame by ReAct
+        """
+        input_str = sentence['input']
+        output_str = sentence['output']
+        last_output = output_str
+        compare_history = []        # record compare history
+        gpt_vote_history = []
+
+        better_answer = last_output
+        first_corrected_text = last_output
+
+        print('Instruction: %s' % input_str)
+        print('Origin Output: %s' % last_output)
+        print()
+
+        # cycle
+        try_num = 1
+        same_time = 0
+        while try_num < max_try:
+            # get correted output
+            _, sen_list = self.get_sentence_id(last_output)
+            advises = self.ask_advises(input_str, last_output, prompt_template=prompt.Rethinking_prompt)
+
+            if len(advises) != 0:
+                _, new_output = self.modify_pass_vote(output_str, advises)
+                if try_num == 1:
+                    first_corrected_text = new_output
+            else:
+                new_output = last_output
+
+            print('New Output: %s' % new_output)
+            print()
+
+            if new_output == last_output:       # cycle terminal
+                compare_history.append({'last': last_output, 'new': new_output, 'sim': 'same', 'better': 'same'})
+                break
+
+            compare = {'last': last_output, 'new': new_output}
+            rand_num = random.choice([1, 0])
+
+            if rand_num == 0:
+                output_1 = last_output
+                output_2 = new_output
+            else:
+                output_1 = new_output
+                output_2 = last_output
+            
+            input_prompt = prompt.compare_prompt.substitute(task=self.task_prompt, input=input_str, output_1=output_1, output_2=output_2)
+            input_messages =[
+                    {"role": "user", "content": input_prompt},
+                ]
+
+            llm_results = utils.ask_gpt(messages = input_messages, model = args.model_name, n = self.args.vote_num, temperature = self.args.temperature)
+ 
+            vote_list = [] 
+            for response in llm_results['choices']:
+                result = response['message']['content']
+                try:
+                    ad = json.loads(result)
+                    vote_list.append(ad)
+                except Exception as e:
+                    print("Convert Error")
+
+            sim_score, better_score, gpt_vote_result = self.get_sim_better(vote_list, rand_num)
+            
+            better_answer = ''
+            terminal_flag = False
+            if better_score > 0:
+                if rand_num == 0:
+                    better_answer = last_output
+                    compare['better'] = 'last'
+                else:
+                    better_answer = new_output
+                    compare['better'] = 'new'
+            elif better_score < 0:
+                if rand_num == 0:
+                    better_answer = new_output
+                    compare['better'] = 'new'
+                else:
+                    better_answer = last_output
+                    compare['better'] = 'last'
+            else:
+                better_answer = last_output
+                compare['better'] = 'same'
+
+            if sim_score >= 0:          
+                compare['sim'] = 'yes'
+                terminal_flag = True
+            else:
+                compare['sim'] = 'no'             
+
+            compare_history.append(compare)
+            gpt_vote_history.append({'last': last_output, 'new': new_output, 'vote_list':gpt_vote_result})
+
+            print('Cycle %d' % try_num)
+            print('Sim: %s' % compare['sim'])
+            print('Better: %s' % compare['better'])
+            print('Better Output: %s' % better_answer)
+            print()
+            
+            
+            # continue cycle
+            if compare['better'] == 'last':
+                same_time += 1
+            else:
+                same_time = 0
+            if same_time >= same_cut:
+                terminal_flag = True 
+
+            if terminal_flag:       # cycle terminal
+                break
+            
+            last_output = better_answer
+            try_num += 1
+
+        if try_num >= max_try:
+            compare_history.append('Reach Max Retry...')
+
+
+        return better_answer, first_corrected_text, compare_history, gpt_vote_history
+
 
 
     def run(self):
@@ -459,6 +643,12 @@ class Correction(object):
             elif self.args.strategy == 'vote':
                 corrected_text, first_corrected_text, advises  = self.vote_correct(data)
                 save_dict = {'id': index, 'input': data['input'], 'origin_output': data['output'], 'corrected_output': corrected_text, 'gpt_advises': advises}
+            elif self.args.strategy == 'ReAct':
+                corrected_text, first_corrected_text, advises  = self.ReAct_correct(data)
+                save_dict = {'id': index, 'input': data['input'], 'origin_output': data['output'], 'corrected_output': corrected_text, 'gpt_advises': advises}
+            elif self.args.strategy == 'ReAct_circle':
+                corrected_text, first_corrected_text, compare_history, gpt_vote_history = self.ReAct_cycle_correct(data)
+                save_dict = {'id': index, 'input': data['input'], 'origin_output': data['output'], 'corrected_output': corrected_text, 'compare_history': compare_history, 'gpt_vote_history': gpt_vote_history}
             else:
                 raise("Unknown strategy %s" % self.args.strategy)
 
@@ -477,21 +667,21 @@ if __name__ == '__main__':
     parser = ArgumentParser()
 
     parser.add_argument("--input_file", default="/Users/jjh/Desktop/git_projects/GPT-Correction/data/luotuo_labeled_data.json", type=str)
-    parser.add_argument("--output_file", default="/Users/jjh/Desktop/git_projects/GPT-Correction/data/luotuo_corrected_chatgpt_circle.json", type=str) 
-    parser.add_argument("--start_id", default=8, type=int)                # skip instances
+    parser.add_argument("--output_file", default="/Users/jjh/Desktop/git_projects/GPT-Correction/data/luotuo_corrected_chatgpt_ReAct.json", type=str) 
+    parser.add_argument("--start_id", default=0, type=int)                # skip instances
     parser.add_argument("--vote_num", default=10, type=int)                  # how many GPT votes
     parser.add_argument("--mode", default="NLG", type=str)                  # can choose NLG or NLU
     parser.add_argument("--lang", default="chinese", type=str)              # can choose chinese or english
     parser.add_argument("--save_first", default=True, action='store_true')            # save first GPT correction result
          
     parser.add_argument("--use_api_ensemble", default=False, action='store_true')     # use GPT api to ensemble vote result
-    parser.add_argument("--strategy", default='ciycle', type=str)           # circle, vote
+    parser.add_argument("--strategy", default='ReAct', type=str)           # circle, vote
     parser.add_argument("--pass_threshold", default=0.8, type=float)
     parser.add_argument("--op_threshold", default=0.2, type=float)
 
     parser.add_argument("--model_name", default='gpt-3.5-turbo', type=str)     
     parser.add_argument("--temperature", default=1, type=float) 
-    parser.add_argument("--api_key", default='', type=str)
+    parser.add_argument("--api_key", default='sk-O925mee9VN8z6HsUcQ3E8hQc31pqRnCfV49UEzR1s7yO1oP1', type=str)
     args = parser.parse_args()
 
     print(args)
