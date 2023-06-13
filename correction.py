@@ -282,6 +282,7 @@ class Correction(object):
             try:
                 sim = v['Whether highly similar'].lower()
                 a = v['Which better'].lower()
+                # print(v)
             except Exception as e:
                 print('Warn: Error format.')
                 continue
@@ -305,7 +306,7 @@ class Correction(object):
             if a == 'enthusiasm':
                 score += 1
                 vote['better'] = e_result
-            elif a == 'Ambition':
+            elif a == 'ambition':
                 score -= 1
                 vote['better'] = a_reslut
             else:
@@ -454,7 +455,8 @@ class Correction(object):
         return better_answer, first_corrected_text, compare_history, gpt_vote_history
     
 
-    def modify_pass_vote(self, last_output, advises, pass_threshold=0.5):
+    def modify_pass_vote(self, last_output, advises):
+        pass_threshold = self.args.pass_threshold
         threshold = int(pass_threshold * len(advises) + 0.5)
         pass_num = 0
         modify_values = []
@@ -512,6 +514,7 @@ class Correction(object):
         last_output = output_str
         compare_history = []        # record compare history
         gpt_vote_history = []
+        correction_history = [last_output]
 
         better_answer = last_output
         first_corrected_text = last_output
@@ -539,83 +542,89 @@ class Correction(object):
             print()
 
             if new_output == last_output:       # cycle terminal
-                compare_history.append({'last': last_output, 'new': new_output, 'sim': 'same', 'better': 'same'})
+                # compare_history.append({'last': last_output, 'new': new_output, 'sim': 'same', 'better': 'same'})
+                print('Pass the output')
                 break
-
-            compare = {'last': last_output, 'new': new_output}
-            rand_num = random.choice([1, 0])
-
-            if rand_num == 0:
-                output_1 = last_output
-                output_2 = new_output
-            else:
-                output_1 = new_output
-                output_2 = last_output
             
-            input_prompt = prompt.compare_prompt.substitute(task=self.task_prompt, input=input_str, output_1=output_1, output_2=output_2)
-            input_messages =[
-                    {"role": "user", "content": input_prompt},
-                ]
+            better_answer = new_output
+            correction_history.append(better_answer)
 
-            llm_results = utils.ask_gpt(messages = input_messages, model = args.model_name, n = self.args.vote_num, temperature = self.args.temperature)
+            # compare = {'last': last_output, 'new': new_output}
+            # rand_num = random.choice([1, 0])
+
+            # if rand_num == 0:
+            #     output_1 = last_output
+            #     output_2 = new_output
+            # else:
+            #     output_1 = new_output
+            #     output_2 = last_output
+            
+            # input_prompt = prompt.compare_prompt.substitute(task=self.task_prompt, input=input_str, output_1=output_1, output_2=output_2)
+            # input_messages =[
+            #         {"role": "user", "content": input_prompt},
+            #     ]
+
+            # llm_results = utils.ask_gpt(messages = input_messages, model = args.model_name, n = self.args.vote_num, temperature = self.args.temperature)
  
-            vote_list = [] 
-            for response in llm_results['choices']:
-                result = response['message']['content']
-                try:
-                    ad = json.loads(result)
-                    vote_list.append(ad)
-                except Exception as e:
-                    print("Convert Error")
+            # vote_list = [] 
+            # for response in llm_results['choices']:
+            #     result = response['message']['content']
+            #     try:
+            #         ad = json.loads(result)
+            #         vote_list.append(ad)
+            #     except Exception as e:
+            #         print("Convert Error")
 
-            sim_score, better_score, gpt_vote_result = self.get_sim_better(vote_list, rand_num)
+            # sim_score, better_score, gpt_vote_result = self.get_sim_better(vote_list, rand_num)
             
-            better_answer = ''
-            terminal_flag = False
-            if better_score > 0:
-                if rand_num == 0:
-                    better_answer = last_output
-                    compare['better'] = 'last'
-                else:
-                    better_answer = new_output
-                    compare['better'] = 'new'
-            elif better_score < 0:
-                if rand_num == 0:
-                    better_answer = new_output
-                    compare['better'] = 'new'
-                else:
-                    better_answer = last_output
-                    compare['better'] = 'last'
-            else:
-                better_answer = last_output
-                compare['better'] = 'same'
+            # better_answer = ''
+            # terminal_flag = False
+            # if better_score > 0:
+            #     if rand_num == 0:
+            #         better_answer = last_output
+            #         compare['better'] = 'last'
+            #     else:
+            #         better_answer = new_output
+            #         compare['better'] = 'new'
+            # elif better_score < 0:
+            #     if rand_num == 0:
+            #         better_answer = new_output
+            #         compare['better'] = 'new'
+            #     else:
+            #         better_answer = last_output
+            #         compare['better'] = 'last'
+            # else:
+            #     better_answer = last_output
+            #     compare['better'] = 'same'
 
-            if sim_score >= 0:          
-                compare['sim'] = 'yes'
-                terminal_flag = True
-            else:
-                compare['sim'] = 'no'             
+            # if sim_score >= 0:          
+            #     compare['sim'] = 'yes'
+            #     terminal_flag = True
+            # else:
+            #     compare['sim'] = 'no'             
 
-            compare_history.append(compare)
-            gpt_vote_history.append({'last': last_output, 'new': new_output, 'vote_list':gpt_vote_result})
+            # compare_history.append(compare)
+            # gpt_vote_history.append({'last': last_output, 'new': new_output, 'vote_list':gpt_vote_result})
 
             print('Cycle %d' % try_num)
-            print('Sim: %s' % compare['sim'])
-            print('Better: %s' % compare['better'])
-            print('Better Output: %s' % better_answer)
+            # print('Sim: %s' % compare['sim'])
+            # print('Vote list: ', vote_list)
+            # print('Compare list: ', gpt_vote_result)
+            # print('Better: %s' % compare['better'])
+            # print('Better Output: %s' % better_answer)
             print()
             
             
-            # continue cycle
-            if compare['better'] in ['last', 'same']:
-                same_time += 1
-            else:
-                same_time = 0
-            if same_time >= same_cut:
-                terminal_flag = True 
+            # # continue cycle
+            # if compare['better'] in ['last', 'same']:
+            #     same_time += 1
+            # else:
+            #     same_time = 0
+            # if same_time >= same_cut:
+            #     terminal_flag = True 
 
-            if terminal_flag:       # cycle terminal
-                break
+            # if terminal_flag:       # cycle terminal
+            #     break
             
             last_output = better_answer
             try_num += 1
@@ -624,7 +633,7 @@ class Correction(object):
             compare_history.append('Reach Max Retry...')
 
 
-        return better_answer, first_corrected_text, compare_history, gpt_vote_history
+        return better_answer, first_corrected_text, correction_history, gpt_vote_history
 
 
 

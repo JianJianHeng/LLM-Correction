@@ -109,7 +109,7 @@ Please provide your revision suggestions according to the following json format:
 {
     "Reason": "<provide reason>",                   # Provide the reason for this audit
     "Whether highly similar": "<yes/no>",           # Please evaluate whether the two annotated results are highly similar in terms of form, structure, grammar, and semantics. Please select "no" if there is semantic opposition or difference. Your answer should be limited to "yes" or "no."
-    "Which better": "<Enthusiasm/Ambition/Same>"    # Please select the result that you believe is better and more suitable for the annotation task. Your choice must be one of the following: Enthusiasm, Ambition, or Same. Please note that "Same" indicates that you consider the two results to be equally good.
+    "Which better": "<Enthusiasm/Ambition>"         # Please select the result that you believe is better and more suitable for the annotation task. Your choice must be one of the following: Enthusiasm, Ambition.
 }
 
 Annotation Task:
