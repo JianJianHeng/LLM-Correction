@@ -222,7 +222,7 @@ class Correction(object):
                     {"role": "user", "content": input_prompt},
                 ]
         
-        llm_results = utils.ask_gpt(messages = input_messages, model = args.model_name, n = self.args.vote_num, temperature = self.args.temperature)
+        llm_results = utils.ask_gpt(messages = input_messages, model = self.args.model_name, n = self.args.vote_num, temperature = self.args.temperature)
  
         advises = [] 
         for response in llm_results['choices']:
@@ -454,11 +454,11 @@ class Correction(object):
         return better_answer, first_corrected_text, compare_history, gpt_vote_history
     
 
-    def modify_pass_vote(self, output_str, advises, pass_threshold=0.5):
-        threshold = int(pass_threshold * len(advises))
+    def modify_pass_vote(self, last_output, advises, pass_threshold=0.5):
+        threshold = int(pass_threshold * len(advises) + 0.5)
         pass_num = 0
         modify_values = []
-        first_corrected_text = output_str
+        first_corrected_text = last_output
 
         for i, ad in enumerate(advises):
             try:
@@ -474,8 +474,8 @@ class Correction(object):
                 if i == 0:
                     first_corrected_text = value
 
-        if pass_num >= threshold:
-            return first_corrected_text, output_str
+        if pass_num >= threshold or len(modify_values) == 0:
+            return first_corrected_text, last_output
         else:
             return first_corrected_text, random.choice(modify_values)
                 
@@ -529,7 +529,7 @@ class Correction(object):
             advises = self.ask_advises(input_str, last_output, prompt_template=prompt.Rethinking_prompt)
 
             if len(advises) != 0:
-                _, new_output = self.modify_pass_vote(output_str, advises)
+                _, new_output = self.modify_pass_vote(last_output, advises)
                 if try_num == 1:
                     first_corrected_text = new_output
             else:
@@ -607,7 +607,7 @@ class Correction(object):
             
             
             # continue cycle
-            if compare['better'] == 'last':
+            if compare['better'] in ['last', 'same']:
                 same_time += 1
             else:
                 same_time = 0
