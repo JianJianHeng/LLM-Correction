@@ -47,7 +47,7 @@ def read_api(filename):
     return first_line
 
 openai.api_base = "https://api.chatanywhere.com.cn/v1"
-openai.api_key = read_api('gpt_tokens.txt')
+# openai.api_key = read_api('gpt_tokens.txt')
 
 def set_api_key(api_key):
     openai.api_key = api_key
@@ -68,7 +68,7 @@ def ask_gpt(messages, model='gpt-3.5-turbo', n=1, temperature=1, max_retry=10):
         except Exception as e:
             print('API Error:', str(e))
             retry += 1
-            time.sleep(10)
+            time.sleep(20)
     if success == False:
         raise("API Error can't fix.")
     if response == None:
