@@ -191,10 +191,10 @@ if __name__ == '__main__':
     # output_file = "/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/chatgpt_label_2.json"
     # process_jsonl(input_file, output_file)
 
-    # input_file = "/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/gpt4_label_2.json"
-    # label_file = "/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/finacial_events_label_converted.json"
-    # output_file = "/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/gpt4_label_3.json"
-    # filter_repeat(input_file, label_file, output_file)
+    input_file = "/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/gpt4_label_2.json"
+    label_file = "/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/finacial_events_label_converted.json"
+    output_file = "/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/gpt4_label_3.json"
+    filter_repeat(input_file, label_file, output_file)
 
     # # 转化事件抽取数据集
     # input_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/duee_train.json'

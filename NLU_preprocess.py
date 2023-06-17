@@ -68,21 +68,23 @@ def evaluate_event_extraction(pred: list, target: list) -> dict:
     for p in pred:
         for t in target:
             if p['事件'] == t['事件']:
-                if '触发词' in p and (p['触发词'] in t['触发词'] or t['触发词'] in p['触发词']):
+                if '触发词' in p and (t['触发词'] in p['触发词']):
                     trigger_TP += 1
                 else:
                     trigger_FP += 1
 
                 for key in p.keys():
-                    if key not in ['事件', '触发词']:
-                        if key in t and (p[key] in t[key] or t[key] in p[key]):
-                            element_TP += 1
-                        else:
-                            element_FP += 1
+                    # if key not in ['事件', '触发词']:
+                    if key in t and (t[key] in p[key] or p[key] in t[key]):
+                        element_TP += 1
+                    else:
+                        element_FP += 1
 
     for t in target:
+        find_flag = False
         for p in pred:
             if t['事件'] == p['事件']:
+                find_flag = True
                 trigger_list = []
                 for e in pred:
                     if e['事件'] == p['事件'] and '触发词' in e:
@@ -90,7 +92,6 @@ def evaluate_event_extraction(pred: list, target: list) -> dict:
 
                 target_trigger = t['触发词']
                 cover_flag = False
-
                 for the_t in trigger_list:
                     if target_trigger in the_t or the_t in target_trigger:
                         cover_flag = True
@@ -98,14 +99,19 @@ def evaluate_event_extraction(pred: list, target: list) -> dict:
                 if cover_flag == False:
                     trigger_FN += 1
 
-
-                # if '触发词' in p and t['触发词'] not in [e['触发词'] for e in pred if (e['事件'] == p['事件'] and '触发词' in e)]:
-                #     trigger_FN += 1
-
                 for key in t.keys():
-                    if key not in ['事件', '触发词']:
-                        if key not in p or (p[key] not in t[key] and t[key] not in p[key]):
-                            element_FN += 1
+                    # if key not in ['事件', '触发词']:
+                    if key not in p or (t[key] not in p[key] and p[key] not in t[key]):
+                        element_FN += 1
+
+        # if find_flag == False:
+        #     trigger_FN += 1
+
+        #     for key in t.keys():
+        #             # if key not in ['事件', '触发词']:
+        #             element_FN += 1
+
+
 
     return {
         'event': {'TP': event_TP, 'FP': event_FP, 'FN': event_FN},
@@ -321,9 +327,9 @@ if __name__ == '__main__':
 
     label_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/finacial_events_label_converted.json'
     # 转化ChatGPT原始标注
-    input_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/chatgpt_label_2.json'
+    input_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/correction/NLU_corrected_chatgpt_vote_random.json'
     output_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/chatgpt_label_3.json'
-    preprocess_auto_label(input_file, output_file)
+    preprocess_auto_label(input_file, output_file, tag='origin_output')
 
     # 评估ChatGPT
     print('ChatGPT 原始')
@@ -332,9 +338,10 @@ if __name__ == '__main__':
 
 
     # 转化GPT4原始标注
-    input_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/gpt4_label_3.json'
+    # input_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/gpt4_label_3.json'
+    input_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/correction/NLU_corrected_gpt4_vote_major.json'
     output_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/gpt4_label_4.json'
-    preprocess_auto_label(input_file, output_file)
+    preprocess_auto_label(input_file, output_file, tag='origin_output')
 
     # 评估GPT4
     print('GPT4 原始')
@@ -351,6 +358,16 @@ if __name__ == '__main__':
     results = evaluate_jsonl_files(output_file, label_file)
     print_evaluation_results(results)
 
+    # 转化ChatGPT原始标注
+    input_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/correction/NLU_corrected_chatgpt_vote_major.json'
+    output_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/chatgpt_correction_label_major.json'
+    preprocess_auto_label(input_file, output_file, tag='corrected_output')
+
+    # 评估ChatGPT
+    print('ChatGPT majority vote Correction')
+    results = evaluate_jsonl_files(output_file, label_file)
+    print_evaluation_results(results)
+
 
     # 转化GPT4原始标注
     input_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/correction/NLU_corrected_gpt4_vote_random.json'
@@ -359,5 +376,36 @@ if __name__ == '__main__':
 
     # 评估GPT4
     print('GPT4 random Correction')
+    results = evaluate_jsonl_files(output_file, label_file)
+    print_evaluation_results(results)
+
+    # 转化GPT4
+    input_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/correction/NLU_corrected_gpt4_vote_major.json'
+    output_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/gpt4_correction_label_major.json'
+    preprocess_auto_label(input_file, output_file, tag='corrected_output')
+
+    # 评估GPT4
+    print('GPT4 majority vote Correction')
+    results = evaluate_jsonl_files(output_file, label_file)
+    print_evaluation_results(results)
+
+
+    # 转化ChatGPT cycle
+    input_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/correction/NLU_corrected_chatgpt_cycle_random.json'
+    output_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/chatgpt_correction_label_cycle.json'
+    preprocess_auto_label(input_file, output_file, tag='corrected_output')
+
+    # 评估GPT4
+    print('ChatGPT cycle Correction')
+    results = evaluate_jsonl_files(output_file, label_file)
+    print_evaluation_results(results)
+
+    # 转化GPT4 cycle
+    input_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/correction/NLU_corrected_gpt4_cycle_random.json'
+    output_file = '/Users/jjh/Desktop/git_projects/GPT-Correction/data/NLU/gpt4_correction_label_cycle.json'
+    preprocess_auto_label(input_file, output_file, tag='corrected_output')
+
+    # 评估GPT4
+    print('GPT4 cycle Correction')
     results = evaluate_jsonl_files(output_file, label_file)
     print_evaluation_results(results)
